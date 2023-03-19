@@ -1,10 +1,9 @@
-import asyncio
 import json
 import logging
 import os
-
+import asyncio
+import redis2
 import aiohttp.web as web
-import aredis
 from dotenv import load_dotenv
 from twilio.base.exceptions import TwilioRestException
 from twilio.rest import Client
@@ -25,14 +24,14 @@ class SMSHandler:
         except json.JSONDecodeError:
             return web.Response(status=400)
 
-        if await self.redis_pool.get(data['to']):
+        if self.redis_pool.get(data['to']):
             response = {'message': 'SMS already sent to this phone number'}
             return web.json_response(response)
 
         try:
             message = await self.send_sms(data['to'], data['body'])
             response = {'message_id': message.sid}
-            await self.redis_pool.set(data['to'], 'sent', ex=3600)
+            self.redis_pool.set(data['to'], 'sent', ex=3600)
             return web.json_response(response)
         except TwilioRestException as e:
             logging.error(str(e))
@@ -58,8 +57,11 @@ async def start_server():
     auth_token = os.getenv("TWILIO_AUTH_TOKEN")
     number = os.getenv("TWILIO_NUMBER")
     redis_url = os.getenv('REDIS_URL')
+    redis_password = os.getenv('REDIS_PASSWORD')
     try:
-        redis_pool = aredis.StrictRedis.from_url(redis_url, decode_responses=True, max_connections=10)
+        redis_pool = redis2.StrictRedis.from_url(
+            redis_url, decode_responses=True, max_connections=10, password=redis_password
+        )
     except Exception as e:
         logging.error(str(e))
         raise e
